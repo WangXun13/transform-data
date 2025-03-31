@@ -1,0 +1,45 @@
+import pandas as pd
+
+# 示例数据（与之前一致）
+data = {
+    'A': ['X', None, 'X', None],
+    'B': [None, 'X', None, None],
+    'C': ['X', None, None, 'X'],
+    'D': [None, None, None, 'X']
+}
+df = pd.DataFrame(data, index=['a', 'b', 'c', 'd'])
+
+# 获取原始行列顺序
+rows_order = df.index.tolist()
+cols_order = df.columns.tolist()
+
+# 转换并筛选X
+stacked = df.stack()
+result = []
+
+# 生成原始记录（保持遍历顺序）
+for (row, col), val in stacked.items():
+    if val == 'X':
+        result.append({'type': 'by_row', 'source': row, 'target': col})
+        result.append({'type': 'by_col', 'source': col, 'target': row})
+
+# 将记录分为by_row和by_col两组，并分别排序
+result_rows = [r for r in result if r['type'] == 'by_row']
+result_cols = [r for r in result if r['type'] == 'by_col']
+
+# 处理by_row：按行顺序 -> 列顺序
+df_rows = pd.DataFrame(result_rows)
+df_rows['source'] = pd.Categorical(df_rows['source'], categories=rows_order, ordered=True)
+df_rows['target'] = pd.Categorical(df_rows['target'], categories=cols_order, ordered=True)
+df_rows_sorted = df_rows.sort_values(['source', 'target'])
+
+# 处理by_col：按列顺序 -> 行顺序
+df_cols = pd.DataFrame(result_cols)
+df_cols['source'] = pd.Categorical(df_cols['source'], categories=cols_order, ordered=True)
+df_cols['target'] = pd.Categorical(df_cols['target'], categories=rows_order, ordered=True)
+df_cols_sorted = df_cols.sort_values(['source', 'target'])
+
+# 合并结果
+result_df = pd.concat([df_rows_sorted, df_cols_sorted], ignore_index=True)[['type', 'source', 'target']]
+
+print(result_df)
