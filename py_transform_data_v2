@@ -1,0 +1,57 @@
+import pandas as pd
+
+# 假设df1和df2是已有的数据集
+# 示例数据
+# df1 = pd.DataFrame({
+#     'col1': ['A', 'A', 'B'],
+#     'col2': [1, 1, 2],
+#     'col3': ['X', 'Y', 'Z']
+# })
+# df2 = pd.DataFrame({
+#     'col1': ['A', 'A', 'A', 'B'],
+#     'col2': [1, 1, 1, 2],
+#     'col3': ['P', 'Q', 'R', 'S']
+# })
+
+# 步骤1：为每个键组添加临时索引
+df1['temp_index'] = df1.groupby(['col1', 'col2']).cumcount()
+df2['temp_index'] = df2.groupby(['col1', 'col2']).cumcount()
+
+# 步骤2：外连接合并数据集
+merged = pd.merge(
+    df1, df2,
+    on=['col1', 'col2', 'temp_index'],
+    how='outer',
+    suffixes=('_df1', '_df2')
+)
+
+# 步骤3：计算每个键的行数并确定最大值
+count1 = df1.groupby(['col1', 'col2']).size().reset_index(name='count1')
+count2 = df2.groupby(['col1', 'col2']).size().reset_index(name='count2')
+
+merged_counts = pd.merge(
+    count1, count2,
+    on=['col1', 'col2'],
+    how='outer'
+).fillna(0)
+merged_counts['count1'] = merged_counts['count1'].astype(int)
+merged_counts['count2'] = merged_counts['count2'].astype(int)
+merged_counts['max_count'] = merged_counts[['count1', 'count2']].max(axis=1)
+
+# 将最大行数合并到主数据集
+merged = merged.merge(
+    merged_counts[['col1', 'col2', 'max_count']],
+    on=['col1', 'col2'],
+    how='left'
+)
+
+# 步骤4：筛选保留的行（temp_index小于max_count）
+merged = merged[merged['temp_index'] < merged['max_count']]
+
+# 步骤5：删除辅助列并重新排序
+result = merged.drop(columns=['temp_index', 'max_count']).sort_values(
+    ['col1', 'col2', 'temp_index']
+).reset_index(drop=True)
+
+# 输出结果
+print(result)
