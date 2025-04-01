@@ -9,7 +9,7 @@ data = {
 }
 df = pd.DataFrame(data, index=['a', 'b', 'c', 'd'])
 
-# 映射表
+# 映射表（假设col_order不存在）
 row_mapping = pd.DataFrame({
     'row_name': ['a', 'b', 'c', 'd'],
     'row_label': ['Label a', 'Label b', 'Label c', 'Label d']
@@ -17,11 +17,10 @@ row_mapping = pd.DataFrame({
 
 col_mapping = pd.DataFrame({
     'col_name': ['A', 'B', 'C', 'D'],
-    'col_label': ['Label A', 'Label B', 'Label C', 'Label D'],
-    'col_order': [1, 2, 3, 4]
+    'col_label': ['Label A', 'Label B', 'Label C', 'Label D']
 })
 
-# 生成原始结果（标签已替换）
+# 生成原始结果（未替换标签）
 stacked = df.stack()
 result = []
 for (row, col), val in stacked.items():
@@ -30,83 +29,81 @@ for (row, col), val in stacked.items():
         result.append({'type': 'by_col', 'source': col, 'target': row})
 result_df = pd.DataFrame(result)[['type', 'source', 'target']]
 
-# 标签映射函数（与之前一致）
+# 标签替换函数
 def map_labels(df, row_map, col_map):
     df = df.copy()
-    # 行标签映射
-    row_label_dict = row_map.set_index('row_name')['row_label']
-    # 列标签映射
-    col_label_dict = col_map.set_index('col_name')['col_label']
+    # 生成映射字典
+    row_label_dict = row_map.set_index('row_name')['row_label'].to_dict()
+    col_label_dict = col_map.set_index('col_name')['col_label'].to_dict()
     
+    # 替换by_row类型
     mask_row = df['type'] == 'by_row'
     df.loc[mask_row, 'source'] = df.loc[mask_row, 'source'].map(row_label_dict)
     df.loc[mask_row, 'target'] = df.loc[mask_row, 'target'].map(col_label_dict)
     
+    # 替换by_col类型
     mask_col = df['type'] == 'by_col'
     df.loc[mask_col, 'source'] = df.loc[mask_col, 'source'].map(col_label_dict)
     df.loc[mask_col, 'target'] = df.loc[mask_col, 'target'].map(row_label_dict)
     
     return df
 
-# 执行标签替换
-labeled_df = map_labels(result_df, row_mapping, col_mapping)
-
-# 高级排序函数
-def advanced_sort(df, row_map, col_map, sort_by_row_index=True):
-    # 深拷贝防止污染数据
-    df = df.copy()
+# 排序函数（支持按标签字母或原始顺序）
+def custom_sort(df, df_original, sort_by_row_label=False):
+    # 获取原始行列顺序
+    row_order = df_original.index.tolist()
+    col_order = df_original.columns.tolist()
     
     # 生成逆映射字典（标签 → 原始名称）
-    row_label_to_name = row_map.set_index('row_label')['row_name'].to_dict()
-    col_label_to_name = col_map.set_index('col_label')['col_name'].to_dict()
-    
-    # 生成原始顺序字典
-    row_order_dict = {row: idx for idx, row in enumerate(row_map['row_name']}
-    col_order_dict = col_map.set_index('col_name')['col_order'].to_dict()
+    row_label_to_name = {v: k for k, v in row_mapping.set_index('row_name')['row_label'].to_dict().items()}
+    col_label_to_name = {v: k for k, v in col_mapping.set_index('col_name')['col_label'].to_dict().items()}
     
     # 按类型拆分数据
     df_by_row = df[df['type'] == 'by_row'].copy()
     df_by_col = df[df['type'] == 'by_col'].copy()
     
-    # --- 处理 by_row 类型 ---
-    # 计算排序键
-    df_by_row['sort_row_source'] = df_by_row['source'].map(
-        lambda x: row_order_dict.get(row_label_to_name[x], 999) 
-        if sort_by_row_index 
-        else x  # 直接按标签字母排序
-    )
-    df_by_row['sort_col_target'] = df_by_row['target'].map(
-        lambda x: col_order_dict.get(col_label_to_name[x], 999
-    )
-    
-    # 排序逻辑
-    if sort_by_row_index:
-        df_by_row = df_by_row.sort_values(['sort_row_source', 'sort_col_target'])
+    # === 处理 by_row 类型 ===
+    # 生成source排序键（行顺序或标签字母）
+    if sort_by_row_label:
+        # 按标签字母排序
+        df_by_row = df_by_row.sort_values('source')
     else:
-        df_by_row = df_by_row.sort_values(['source', 'sort_col_target'])
+        # 按原始行顺序排序
+        df_by_row['source_order'] = df_by_row['source'].map(
+            lambda x: row_order.index(row_label_to_name[x])
+        )
+        df_by_row = df_by_row.sort_values('source_order')
     
-    # --- 处理 by_col 类型 ---
-    # 计算排序键
-    df_by_col['sort_col_source'] = df_by_col['source'].map(
-        lambda x: col_order_dict.get(col_label_to_name[x], 999)
+    # 同一行内按原始列顺序排序
+    df_by_row['target_order'] = df_by_row['target'].map(
+        lambda x: col_order.index(col_label_to_name[x])
     )
-    df_by_col['sort_row_target'] = df_by_col['target'].map(
-        lambda x: row_order_dict.get(row_label_to_name[x], 999)
-    )
+    df_by_row = df_by_row.sort_values(['source_order' if not sort_by_row_label else 'source', 'target_order'])
     
-    # 排序逻辑（始终按列顺序 → 行顺序）
-    df_by_col = df_by_col.sort_values(['sort_col_source', 'sort_row_target'])
+    # === 处理 by_col 类型 ===
+    # source按原始列顺序排序
+    df_by_col['source_order'] = df_by_col['source'].map(
+        lambda x: col_order.index(col_label_to_name[x])
+    )
+    # 同一列内按原始行顺序排序
+    df_by_col['target_order'] = df_by_col['target'].map(
+        lambda x: row_order.index(row_label_to_name[x])
+    )
+    df_by_col = df_by_col.sort_values(['source_order', 'target_order'])
     
     # 合并结果
     final_df = pd.concat([df_by_row, df_by_col], ignore_index=True)
     return final_df[['type', 'source', 'target']]
 
-# 按行索引顺序排序（默认）
-sorted_by_index = advanced_sort(labeled_df, row_mapping, col_mapping, sort_by_row_index=True)
-print("按行索引顺序排序：")
-print(sorted_by_index)
+# 执行标签替换
+labeled_df = map_labels(result_df, row_mapping, col_mapping)
 
-# 按标签字母顺序排序
-sorted_by_alpha = advanced_sort(labeled_df, row_mapping, col_mapping, sort_by_row_index=False)
-print("\n按标签字母顺序排序：")
-print(sorted_by_alpha)
+# 按原始顺序排序（默认）
+sorted_default = custom_sort(labeled_df, df, sort_by_row_label=False)
+print("按原始顺序排序：")
+print(sorted_default)
+
+# 按行标签字母顺序排序
+sorted_alpha = custom_sort(labeled_df, df, sort_by_row_label=True)
+print("\n按行标签字母顺序排序：")
+print(sorted_alpha)
