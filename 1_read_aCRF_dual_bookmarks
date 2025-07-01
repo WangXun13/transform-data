@@ -49,6 +49,13 @@ def extract_pdf_bookmarks_to_csv(input_pdf,output_csv):
     
     df = pd.DataFrame(data, columns = columns)
     df = df.dropna(axis=1, how='all')
+
+    if max_level >= 2:
+        level2_map = df[df['level2'].notna()][['level1', 'level2', 'level2_order']].drop_duplicates()
+        df = df.merge(level2_map, on=['level1', 'level2'], how='left', suffixes=('', '_new'))
+        df['level2_order'] = df['level2_order_new'].fillna(df['level2_order'])
+        df = df.drop(columns=['level2_order_new'])
+
     df = df[df['level3'].notna()]
 
     # Build complete data rows
