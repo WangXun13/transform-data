@@ -62,3 +62,24 @@ def extract_pdf_bookmarks_to_csv(input_pdf,output_csv):
     df.to_csv(output_csv, index = False)
 
 extract_pdf_bookmarks_to_csv(input_pdf,output_csv)
+
+
+        # 生成level2_msg_ord (按level2字母顺序)
+        by_domain_df['level2_msg_ord'] = by_domain_df.groupby('level1')['level2'].transform(
+            lambda x: x.rank(method='dense').astype(int)
+        )
+        
+        # 生成level3_msg_ord (按合并的Ordinal排序)
+        by_domain_df['level3_msg_ord'] = by_domain_df.groupby(['level1', 'level2'])['Ordinal_folders'].transform(
+            lambda x: x.rank(method='dense').astype(int)
+        )
+
+        # 生成level2_msg_ord (按合并的Ordinal排序)
+        by_visit_df['level2_msg_ord'] = by_visit_df.groupby('level1')['Ordinal_folders'].transform(
+            lambda x: x.rank(method='dense').astype(int)
+        )
+        
+        # 生成level3_msg_ord (按page排序)
+        by_visit_df['level3_msg_ord'] = by_visit_df.groupby(['level1', 'level2'])['page'].transform(
+            lambda x: x.rank(method='dense').astype(int)
+        )
