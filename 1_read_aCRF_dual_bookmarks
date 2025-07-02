@@ -6,11 +6,12 @@ def extract_pdf_bookmarks_to_csv(input_pdf,output_csv):
 
     # get the max level of bookmarks and generate column label
     max_level = max(item[0] for item in toc) if toc else 0
-    columns = [f"level{i+1}" for i in  range(max_level)] + ["order", "page"]
+    columns = [f"level{l}" for l in range(1, max_level + 1)] + ["level2_order", "level3_order", "page"]
 
     hierarchy = {level: None for level in range(1, max_level+1)}
     data = []
-    counters = {}
+    level2_counter = defaultdict(int)
+    level3_counter = defaultdict(int)
     
     for item in toc:
         level = item[0]
@@ -22,22 +23,39 @@ def extract_pdf_bookmarks_to_csv(input_pdf,output_csv):
         for l in range(level+1, max_level+1):
             hierarchy[l] = None
 
-        # re - order?
-        parent_key = tuple([hierarchy[l] for l in range(1, level) if hierarchy[l] is not None])
+        # Generate sequence numbers for level2 and level3
+        level1_title = hierarchy.get(1)
+        level2_title = hierarchy.get(2)
+        level3_title = hierarchy.get(3)
 
-        final_seq = None
-        if level == max_level:
-            if parent_key not in counters:
-                counters[parent_key] = 0
-            counters[parent_key] += 1
-            final_seq = counters[parent_key]
+        # level2 sequence number (based on level1)
+        if level == 2 and level1_title is not None:
+            level2_key = level1_title
+            level2_counter[level2_key] += 1
+            level2_order = level2_counter[level2_key]
+        else:
+            level2_order = None
 
-        row = [hierarchy.get(l) for l in range(1, max_level+1)] + [final_seq, page]
+        # level3 sequence number (based on level1 + level2)
+        if level == 3 and level1_title is not None and level2_title is not None:
+            level3_key = (level1_title, level2_title)
+            level3_counter[level3_key] += 1
+            level3_order = level3_counter[level3_key]
+        else:
+            level3_order = None
+
+        row = [hierarchy.get(l) for l in range(1, max_level+1)] + [level2_order, level3_order, page]
         data.append(row)
     
     df = pd.DataFrame(data, columns = columns)
     df = df.dropna(axis=1, how='all')
     
+    df['level2_order'] = df.groupby(['level1', 'level2'])['level2_order'].transform(
+        lambda x: x.ffill().bfill()
+    )
+    df = df[df['level3'].notna()]
+
+    # Build complete data rows
     if(os.path.isfile(output_csv)):
         os.remove(output_csv)
         
